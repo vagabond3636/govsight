@@ -1,6 +1,6 @@
 from typing import Optional, Tuple, Dict
 from .fact_parser import parse_fact_from_text as _regex_parse
-from .parser import parse_fact_from_text as _gpt_parse
+from .parser import parse_fact_from_text as _gpt_parse, parse_intent_and_facts
 
 def parse_fact_from_text(text: str) -> Optional[Dict[str, str]]:
     """

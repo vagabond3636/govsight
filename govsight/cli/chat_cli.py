@@ -25,7 +25,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 # Local package imports -----------------------------------------------------
-from govsight.config import load_settings  # loads env + legacy config
+from govsight.config import settings, load_settings
+
+
 from govsight.logging_utils import get_logger
 
 # Legacy engine import ------------------------------------------------------

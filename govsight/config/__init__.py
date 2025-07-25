@@ -1,14 +1,18 @@
-"""Configuration package init (minimal).
+import os
+from dotenv import load_dotenv
 
-All real work happens in :mod:`govsight.config.settings`.
-A supplemental long-form explanation lives in :mod:`govsight.config._initconfig`.
+load_dotenv()
 
-We re-export the key functions/classes here for ergonomic imports:
+class Settings:
+    def __init__(self):
+        self.db_path = os.getenv("DB_PATH", "govsight/data/memory.db")
+        self.log_dir = os.getenv("LOG_DIR", "govsight/logs")
+        self.openai_api_key = os.getenv("OPENAI_API_KEY", "")
+        self.pinecone_api_key = os.getenv("PINECONE_API_KEY", "")
+        self.pinecone_env = os.getenv("PINECONE_ENV", "")
+        self.pinecone_index = os.getenv("PINECONE_INDEX", "")
 
-    from govsight.config import load_settings, Settings
+def load_settings(profile: str = "dev") -> Settings:
+    return Settings()
 
-"""
-
-from .settings import Settings, load_settings, settings_from_env  # re-export
-
-__all__ = ["Settings", "load_settings", "settings_from_env"]
+settings = load_settings()

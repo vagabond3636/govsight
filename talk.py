@@ -1,109 +1,69 @@
+import os
 import sys
-import re
-from govsight.config import load_settings
+
+# ✅ Safe import for readline on Windows
+try:
+    import readline
+except ImportError:
+    pass  # 'readline' is not available on Windows
+
+from rich import print
 from govsight.memory import Memory
-from govsight.parser import parse_fact_from_text
-from govsight.retrieval.planner import retrieve
+from govsight.vector.search import search_pinecone
+from govsight.web_reasoner import query_web_and_summarize
+from govsight.db.core import search_local_facts
+from govsight.parser import parse_intent_and_facts
+from govsight.config import settings
 
-# Load settings and initialize memory
-settings = load_settings(profile="dev")
-mem = Memory(settings)
-session_id = mem.start_session(profile=settings.profile)
+# Initialize memory object
+memory = Memory(settings=settings)
 
-print("\n🧠 GovSight Chat CLI (R2) — with retrieval cascade!")
-print(f"(Memory session #{session_id} started)\n")
+def print_welcome():
+    print("[bold green]Welcome to GovSight[/bold green]")
+    print("Type 'exit' to quit.\n")
 
-turn = 0
-while True:
-    try:
-        user_input = input("You: ").strip()
-    except (EOFError, KeyboardInterrupt):
-        print("\n[exit]")
-        break
+def main():
+    print_welcome()
 
-    if not user_input:
-        continue
-    if user_input.lower() in {"exit", "quit"}:
-        print("GovSight: Exiting session.")
-        break
+    while True:
+        try:
+            user_input = input("[bold blue]You:[/bold blue] ").strip()
+            if user_input.lower() in ["exit", "quit"]:
+                print("[bold yellow]Goodbye![/bold yellow]")
+                break
 
-    # Log user input
-    mem.log_message(session_id, "user", user_input, turn_index=turn)
+            # Check local database first
+            try:
+                answer = memory.search(user_input)
+                if answer:
+                    print(f"[bold green]GovSight (Local):[/bold green] {answer}")
+                    continue
+            except Exception as e:
+                print(f"[Fact Search Error] {e}")
 
-    response = None
+            # Check Pinecone (vector search)
+            try:
+                pinecone_answer = search_pinecone(user_input)
+                if pinecone_answer:
+                    print(f"[bold green]GovSight (Pinecone):[/bold green] {pinecone_answer}")
+                    continue
+            except Exception as e:
+                print(f"[Embedding Error] {e}")
 
-    # Step 1: Check for parsed fact (declarative or interrogative)
-    fact = parse_fact_from_text(user_input)
-    if isinstance(fact, dict) and fact.get("value") is not None:
-        # Declarative assertion: store the fact
-        subject_type = fact["subject_type"]
-        subject_name = fact["subject_name"]
-        state        = fact["state"]
-        attr         = fact["attr"]
-        value        = fact["value"]
+            # Final fallback: Web search
+            try:
+                print(f"[web_reasoner] Querying the web for: {user_input}")
+                web_answer = query_web_and_summarize(user_input)
+                print(f"[bold green]GovSight (Web):[/bold green] {web_answer}")
+            except Exception as e:
+                print(f"GovSight (Web):  Error during web query: {e}")
 
-        slug = mem.subject_slug_city(subject_name, state)
-        mem.remember_fact(
-            subject_type=subject_type,
-            subject_slug=slug,
-            attr=attr,
-            value=value,
-            source="user",
-        )
-        response = (
-            f"Noted — updated {attr} of {subject_name.title()}, "
-            f"{state.upper()} to {value.title().rstrip('.')}"
-        )
+        except KeyboardInterrupt:
+            print("\n[bold yellow]Session interrupted. Exiting.[/bold yellow]")
+            sys.exit(0)
+        except EOFError:
+            print("\n[bold yellow]Session ended.[/bold yellow]")
+            break
 
-    else:
-        # Step 2: Either an interrogative fact-request or no fact parsed
-        # Try memory recall first
-        recalled = None
-        if isinstance(fact, dict) and fact.get("value") is None:
-            # It's a question parse (e.g. "What is the population of X?")
-            recalled = mem.recall_fact_from_text(user_input)
-        else:
-            # No parse or irrelevant parse, still try recall
-            recalled = mem.recall_fact_from_text(user_input)
-
-        if recalled:
-            # Format memory recall into a sentence
-            slug_parts = recalled.subject_slug.split("_")
-            if slug_parts[-1].isalpha() and len(slug_parts[-1]) == 2:
-                city = " ".join(slug_parts[:-1]).title()
-                st   = slug_parts[-1].upper()
-            else:
-                city = " ".join(slug_parts).title()
-                st   = ""
-            attr = recalled.attr.replace("_", " ")
-            val  = recalled.value.rstrip(".").title()
-            if st:
-                response = f"{val} is the {attr} of {city}, {st}."
-            else:
-                response = f"{val} is the {attr} of {city}."
-
-        else:
-            # Step 3: Full retrieval cascade (DB -> Pinecone -> Web)
-            fetched = retrieve(user_input)
-            if fetched:
-                slug_parts = fetched.subject_slug.split("_")
-                if slug_parts[-1].isalpha() and len(slug_parts[-1]) == 2:
-                    city = " ".join(slug_parts[:-1]).title()
-                    st   = slug_parts[-1].upper()
-                else:
-                    city = " ".join(slug_parts).title()
-                    st   = ""
-                attr = fetched.attr.replace("_", " ")
-                val  = fetched.value.rstrip(".").title()
-                if st:
-                    response = f"{val} is the {attr} of {city}, {st}."
-                else:
-                    response = f"{val} is the {attr} of {city}."
-            else:
-                # Final fallback echo
-                response = f"[echo] You said: {user_input}"
-
-    # Print and log assistant response
-    print(f"GovSight: {response}")
-    mem.log_message(session_id, "assistant", response, turn_index=turn + 1)
-    turn += 2
+if __name__ == "__main__":
+    main()
