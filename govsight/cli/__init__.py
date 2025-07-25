@@ -1,0 +1,1 @@
+"""Command-line entrypoints for GovSight (package namespace)."""

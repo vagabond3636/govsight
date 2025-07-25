@@ -1,0 +1,10 @@
+openai
+pinecone-client
+python-dotenv
+requests
+feedparser
+trafilatura
+tqdm
+unstructured
+playwright
+playwright-stealth
