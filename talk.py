@@ -1,69 +1,49 @@
-import os
-import sys
-
-# ✅ Safe import for readline on Windows
-try:
-    import readline
-except ImportError:
-    pass  # 'readline' is not available on Windows
-
-from rich import print
+import logging
+from govsight.config.settings import settings
 from govsight.memory import Memory
-from govsight.vector.search import search_pinecone
+from govsight.db.search_local import search_local_facts
+from govsight.parser.parser import parse_intent_and_facts
 from govsight.web_reasoner import query_web_and_summarize
-from govsight.db.core import search_local_facts
-from govsight.parser import parse_intent_and_facts
-from govsight.config import settings
+from rich import print
+from rich.prompt import Prompt
 
-# Initialize memory object
 memory = Memory(settings=settings)
 
-def print_welcome():
-    print("[bold green]Welcome to GovSight[/bold green]")
-    print("Type 'exit' to quit.\n")
-
 def main():
-    print_welcome()
+    print("[bold green]🧠 GovSight Chat CLI (R0) – invoking legacy engine...[/bold green]")
+    print("[yellow]Welcome to GovSight[/yellow]")
+    print("[dim]Type 'exit' to quit.[/dim]\n")
 
     while True:
-        try:
-            user_input = input("[bold blue]You:[/bold blue] ").strip()
-            if user_input.lower() in ["exit", "quit"]:
-                print("[bold yellow]Goodbye![/bold yellow]")
-                break
-
-            # Check local database first
-            try:
-                answer = memory.search(user_input)
-                if answer:
-                    print(f"[bold green]GovSight (Local):[/bold green] {answer}")
-                    continue
-            except Exception as e:
-                print(f"[Fact Search Error] {e}")
-
-            # Check Pinecone (vector search)
-            try:
-                pinecone_answer = search_pinecone(user_input)
-                if pinecone_answer:
-                    print(f"[bold green]GovSight (Pinecone):[/bold green] {pinecone_answer}")
-                    continue
-            except Exception as e:
-                print(f"[Embedding Error] {e}")
-
-            # Final fallback: Web search
-            try:
-                print(f"[web_reasoner] Querying the web for: {user_input}")
-                web_answer = query_web_and_summarize(user_input)
-                print(f"[bold green]GovSight (Web):[/bold green] {web_answer}")
-            except Exception as e:
-                print(f"GovSight (Web):  Error during web query: {e}")
-
-        except KeyboardInterrupt:
-            print("\n[bold yellow]Session interrupted. Exiting.[/bold yellow]")
-            sys.exit(0)
-        except EOFError:
-            print("\n[bold yellow]Session ended.[/bold yellow]")
+        user_input = Prompt.ask("[bold blue]You[/bold blue]")
+        if user_input.lower() in ["exit", "quit"]:
             break
+
+        try:
+            fact = parse_intent_and_facts(user_input)
+            subject = fact.get("subject")
+            attribute = fact.get("attribute")
+            value = fact.get("value")
+            intent = fact.get("intent")
+
+            if intent == "provide_fact" and subject and attribute and value:
+                memory.store_fact(subject, attribute, value)
+                print(f"[green]✅ Stored:[/green] {subject} – {attribute} – {value}")
+                continue
+            elif intent == "ask_question" and subject and attribute:
+                answer = search_local_facts(settings.db_path, subject, attribute)
+                if answer:
+                    print(f"[green]GovSight (Memory):[/green] {answer}")
+                    continue
+
+            # If no memory hit or fallback, search the web
+            print("[yellow][web_reasoner] Querying the web for:[/yellow]", user_input)
+            summary = query_web_and_summarize(user_input)
+            print(f"[green]GovSight (Web):[/green] {summary}")
+
+        except Exception as e:
+            logging.exception("Unexpected error")
+            print(f"[red]❌ Error:[/red] {e}")
 
 if __name__ == "__main__":
     main()

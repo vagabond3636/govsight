@@ -6,8 +6,11 @@ and intent from natural language user inputs.
 """
 
 from typing import Optional, Tuple, Dict
-from govsight.config import settings
+from govsight.config.settings import settings
 from govsight.llm.openai_wrapper import chat_completion
+import json
+
+print(f"DEBUG: settings from parser.py – {dir(settings)}")
 
 
 def parse_fact_from_text(text: str) -> Optional[Tuple[str, str, str]]:
@@ -29,12 +32,13 @@ Input: "{text}"
 Output:
 """
 
-    response = chat_completion(
-        system="Extract a single fact from the input in the form: Subject, Attribute, Value.",
-        user=prompt,
-        model=settings.OPENAI_MODEL,
-        temperature=0,
-    )
+    messages = [
+        {"role": "system", "content": "Extract a single fact from the input in the form: Subject, Attribute, Value."},
+        {"role": "user", "content": prompt}
+    ]
+
+    print(f"🧪 Using model: {settings.openai_model}")
+    response = chat_completion(messages, model=settings.openai_model)
 
     if not response:
         return None
@@ -46,7 +50,8 @@ Output:
             attribute = lines[1].split(":", 1)[1].strip()
             value = lines[2].split(":", 1)[1].strip()
             return subject, attribute, value
-    except Exception:
+    except Exception as e:
+        print(f"[⚠️ parse_fact_from_text error] {e}")
         return None
 
     return None
@@ -75,15 +80,25 @@ Format your response as a JSON object.
 User input: "{text}"
 """
 
-    response = chat_completion(
-        system="Extract user intent and any structured fact (subject, attribute, value).",
-        user=prompt,
-        model=settings.OPENAI_MODEL,
-        temperature=0,
-    )
+    messages = [
+        {"role": "system", "content": "Extract user intent and any structured fact (subject, attribute, value)."},
+        {"role": "user", "content": prompt}
+    ]
 
-    import json
-    try:
-        return json.loads(response)
-    except Exception:
+    print(f"🧠 Parsing input: {text}")
+    response = chat_completion(messages, model=settings.openai_model)
+
+    if not response:
+        print("[⚠️ parse_intent_and_facts] No response from LLM")
         return {"intent": "chat", "subject": None, "attribute": None, "value": None}
+
+    try:
+        parsed = json.loads(response)
+        if isinstance(parsed, dict):
+            return parsed
+        else:
+            print(f"[⚠️ parse_intent_and_facts] Non-dict response: {parsed}")
+    except Exception as e:
+        print(f"[⚠️ JSON decode error] {e}\nRaw response: {response}")
+
+    return {"intent": "chat", "subject": None, "attribute": None, "value": None}

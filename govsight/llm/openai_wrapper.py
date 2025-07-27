@@ -1,40 +1,49 @@
 import os
-from openai import OpenAI
+import openai
 from dotenv import load_dotenv
 
 load_dotenv()
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Chat completion wrapper
-def chat_completion(system_prompt, user_prompt, model="gpt-4o", temperature=0.3):
+def get_embedding(text: str, model: str = "text-embedding-3-small") -> list:
     try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=temperature,
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        print(f"[LLM Chat Error] {e}")
-        return "Sorry, I encountered an issue."
-
-# Embedding wrapper
-def get_embedding(text, model="text-embedding-3-small"):
-    try:
-        response = client.embeddings.create(
-            model=model,
+        response = openai.embeddings.create(
             input=[text],
+            model=model
         )
         return response.data[0].embedding
     except Exception as e:
-        print(f"[Embedding Error] {e}")
-        return None
+        print(f"🔴 Embedding error: {e}")
+        return []
 
-# Optional: used by web_reasoner.py
-def summarize_web_content(content, query):
-    prompt = f"Summarize this content to help answer the query: '{query}'.\n\n{content}"
-    return chat_completion("You are a helpful assistant.", prompt)
+
+def chat_completion(messages: list, model: str = "gpt-4") -> str:
+    try:
+        response = openai.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=0.5
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"🔴 Chat completion error: {e}")
+        return "Error processing request"
+
+
+def summarize_web_content(content: str, query: str = "") -> str:
+    prompt = f"""
+You are a government intelligence assistant. Your job is to summarize content scraped from a web page and return relevant facts based on a user query.
+
+User query: "{query}"
+
+Page content:
+{content[:4000]}
+
+Return a brief, clear summary of relevant information from this page.
+"""
+    messages = [
+        {"role": "system", "content": "You are a helpful web summarization assistant."},
+        {"role": "user", "content": prompt}
+    ]
+    return chat_completion(messages)
